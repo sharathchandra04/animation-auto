@@ -1,0 +1,5 @@
+# Pinned: mediapipe 1.x removed the legacy Solutions API (mp.solutions),
+# so 0.10.21 is required for FaceMesh. opencv 4.11 pairs with numpy 1.26.
+opencv-python-headless==4.11.0.86
+mediapipe==0.10.21
+numpy==1.26.4

@@ -1,0 +1,10 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Test / generated videos - never push these (binary, regenerated locally)
+*.mp4
+*.mov
+*.avi
+*.mkv
