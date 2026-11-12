@@ -6,6 +6,23 @@ Usage:
     python lip_outline.py --input video.mp4 --output lips_slow.mp4 --speed 0.5 --color green --thickness 2
     python lip_outline.py video.mp4 --speed 0.25 --output check_025.mp4
     python lip_outline.py --input video.mp4 --output lips_red.mp4 --speed 0.5 --color red --thickness 3 --lips outer
+    python lip_outline.py --input video.mp4 --output wuhan_noodles_lips_slow.mp4 --speed 0.5 --style ghibli
+
+Styles (--style, case-insensitive):
+  traditional (default)  trace the real lip loops, outer and/or inner.
+  ghibli                 one single Ghibli-style line only, overlaid on the
+                         original video — no lip tracing, no skin patch.
+                         Closed mouth: one curved line. Open mouth: one
+                         single oval/circle outline. The shape is measured
+                         from the lip landmarks (width, height, centre) each
+                         frame and smoothed, so it opens and closes as the
+                         person talks/eats. Default colour black, thickness 3.
+
+Output naming: the style is always added to the output file name, just
+before the extension, e.g. --output wuhan_noodles_lips_slow.mp4 with
+--style traditional gives wuhan_noodles_lips_slow_traditional.mp4, and
+with --style ghibli gives wuhan_noodles_lips_slow_ghibli.mp4. The same
+applies to auto-named outputs.
 
 What it does, frame by frame:
   1. MediaPipe Face Mesh finds the face (max 1 face).
@@ -20,12 +37,17 @@ What it does, frame by frame:
 Parameters (all changeable on the command line):
   --input / positional input   input video file
   --output                     output file name, e.g. lips_slow.mp4
+                               (the style is appended: _traditional/_ghibli)
+  --style / --mouth-style      traditional (default) or ghibli
   --speed / --slow             playback speed, 0.5 = half speed (default),
                                0.25 = quarter speed. Must be > 0 and <= 1.
-  --color                      green (default), red, blue, yellow, white,
-                               cyan, magenta
-  --thickness                  outline thickness in pixels (default 2)
-  --lips                       outer, inner, or both (default both)
+  --color                      green (default for traditional), black
+                               (default for ghibli), red, blue, yellow,
+                               white, cyan, magenta
+  --thickness                  outline thickness in pixels (default 2 for
+                               traditional, 3 for ghibli)
+  --lips                       outer, inner, or both (default both;
+                               traditional style only, ignored for ghibli)
   --start / --end              start/end time in seconds (optional trim)
   --scale                      resize output, e.g. 0.5 = half size (default 1.0)
   --mode                       overlay (default, outline on original video),
@@ -68,7 +90,16 @@ COLORS = {
     "white": (255, 255, 255),
     "cyan": (255, 255, 0),
     "magenta": (255, 0, 255),
+    "black": (0, 0, 0),
 }
+
+# Ghibli mouth: corner / top / bottom landmark indices (Face Mesh).
+GHIBLI_LEFT = 61    # left mouth corner
+GHIBLI_RIGHT = 291  # right mouth corner
+GHIBLI_TOP = 0      # top of outer lip, centre
+GHIBLI_BOTTOM = 17  # bottom of outer lip, centre
+# Below this height/width ratio the mouth counts as closed.
+GHIBLI_CLOSED_RATIO = 0.18
 
 
 def draw_lips(frame, landmarks, color, thickness, lips):
@@ -85,6 +116,69 @@ def draw_lips(frame, landmarks, color, thickness, lips):
         cv2.polylines(frame, [loop_pts], isClosed=True, color=color,
                       thickness=thickness, lineType=cv2.LINE_AA)
     return True
+
+
+def draw_ghibli(frame, landmarks, color, thickness, state):
+    """Draw ONE Ghibli-style mouth line on `frame`, in place.
+
+    Measures only the mouth width (corner to corner), height (top to
+    bottom) and centre from the landmarks — it never traces the lip
+    shape. Closed mouth: a single curved line. Open mouth: a single
+    oval outline. `state` is a dict holding the smoothed measurements
+    from previous frames (or None on the first face frame); it is
+    updated in place so the shape does not jitter frame to frame.
+    Returns True if drawn.
+    """
+    h, w = frame.shape[:2]
+    pts = [(lm.x * w, lm.y * h) for lm in landmarks.landmark]
+    left = pts[GHIBLI_LEFT]
+    right = pts[GHIBLI_RIGHT]
+    top = pts[GHIBLI_TOP]
+    bottom = pts[GHIBLI_BOTTOM]
+    width = max(1.0, abs(right[0] - left[0]))
+    height = max(0.0, abs(bottom[1] - top[1]))
+    cx = (left[0] + right[0]) / 2.0
+    cy = (top[1] + bottom[1]) / 2.0
+    # Exponential smoothing: 60% new measurement, 40% previous.
+    if state.get("smooth") is None:
+        state["smooth"] = (cx, cy, width, height)
+    else:
+        pcx, pcy, pw, ph = state["smooth"]
+        state["smooth"] = (0.6 * cx + 0.4 * pcx,
+                           0.6 * cy + 0.4 * pcy,
+                           0.6 * width + 0.4 * pw,
+                           0.6 * height + 0.4 * ph)
+    cx, cy, width, height = state["smooth"]
+    ratio = height / width if width else 0.0
+    centre = (int(cx), int(cy))
+    half_w = max(2, int(width / 2))
+    if ratio < GHIBLI_CLOSED_RATIO:
+        # Closed: one curved line — the bottom half of a shallow ellipse,
+        # from the left corner to the right corner.
+        half_h = max(2, int(width * 0.08))
+        cv2.ellipse(frame, centre, (half_w, half_h), 0, 20, 160,
+                    color, thickness, lineType=cv2.LINE_AA)
+    else:
+        # Open: one single oval outline (never a second/inner loop).
+        half_h = max(2, int(height / 2))
+        cv2.ellipse(frame, centre, (half_w, half_h), 0, 0, 360,
+                    color, thickness, lineType=cv2.LINE_AA)
+    return True
+
+
+def styled_output(path, style):
+    """Return `path` with _<style> added before the extension.
+
+    wuhan_noodles_lips_slow.mp4 + ghibli ->
+    wuhan_noodles_lips_slow_ghibli.mp4. If the name already ends with
+    _traditional or _ghibli, that suffix is replaced, not doubled.
+    """
+    stem = path.stem
+    for old in ("_traditional", "_ghibli"):
+        if stem.endswith(old):
+            stem = stem[: -len(old)]
+            break
+    return path.with_name(f"{stem}_{style}{path.suffix}")
 
 
 def atempo_chain(speed):
@@ -138,16 +232,26 @@ def main():
     ap.add_argument("--input", dest="input", default=None,
                     help="Input video file (e.g. video.mp4)")
     ap.add_argument("--output", default=None,
-                    help="Output file name, e.g. lips_slow.mp4")
+                    help="Output file name, e.g. lips_slow.mp4 "
+                         "(the style is appended: _traditional/_ghibli)")
+    ap.add_argument("--style", dest="style", type=str.lower, default="traditional",
+                    choices=["traditional", "ghibli"],
+                    help="traditional: trace the lip loops (default); "
+                         "ghibli: one single Ghibli-style mouth line")
+    ap.add_argument("--mouth-style", dest="style", type=str.lower, default=None,
+                    choices=["traditional", "ghibli"],
+                    help="Alias for --style")
     ap.add_argument("--speed", dest="speed", type=float, default=0.5,
                     help="Playback speed, 0.5 = half speed (default), "
                          "0.25 = quarter speed. Must be > 0 and <= 1.")
     ap.add_argument("--slow", dest="speed", type=float, default=None,
                     help="Alias for --speed")
-    ap.add_argument("--color", choices=list(COLORS), default="green",
-                    help="Outline colour (default: green)")
-    ap.add_argument("--thickness", type=int, default=2,
-                    help="Outline thickness in pixels (default: 2)")
+    ap.add_argument("--color", choices=list(COLORS), default=None,
+                    help="Outline colour (default: green for traditional, "
+                         "black for ghibli)")
+    ap.add_argument("--thickness", type=int, default=None,
+                    help="Outline thickness in pixels (default: 2 for "
+                         "traditional, 3 for ghibli)")
     ap.add_argument("--lips", choices=["outer", "inner", "both"], default="both",
                     help="Which lip outline to draw (default: both)")
     ap.add_argument("--start", type=float, default=None,
@@ -173,6 +277,15 @@ def main():
         ap.error("--scale must be between 0 (exclusive) and 1")
     if args.output and args.mode == "both":
         ap.error("--output can only be used with --mode overlay or --mode black")
+    if args.style == "ghibli" and args.lips != "both":
+        print("Note: --lips is ignored with --style ghibli "
+              "(one single mouth line, no lip loops).")
+
+    # Per-style defaults: traditional = green, 2px; ghibli = black, 3px.
+    color_name = args.color or ("black" if args.style == "ghibli" else "green")
+    thickness = args.thickness if args.thickness is not None \
+        else (3 if args.style == "ghibli" else 2)
+    print(f"Style: {args.style}  colour: {color_name}  thickness: {thickness}")
 
     src = Path(src_name)
     if not src.is_file():
@@ -202,10 +315,10 @@ def main():
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     for mode in modes:
         if args.output:
-            out_path = Path(args.output)
+            out_path = styled_output(Path(args.output), args.style)
         else:
             suffix = "lips_overlay" if mode == "overlay" else "lips_only"
-            out_path = src.with_name(f"{src.stem}_{suffix}.mp4")
+            out_path = src.with_name(f"{src.stem}_{suffix}_{args.style}.mp4")
         writer = cv2.VideoWriter(str(out_path), fourcc, fps_out, (out_w, out_h))
         if not writer.isOpened():
             print(f"ERROR: could not create output: {out_path}", file=sys.stderr)
@@ -213,11 +326,12 @@ def main():
         writers[mode] = (out_path, writer)
         print(f"Writing {mode}: {out_path}")
 
-    color = COLORS[args.color]
+    color = COLORS[color_name]
     drawn = 0
     no_face = 0
     frame_no = 0
     written = 0
+    ghibli_state = {"smooth": None}
 
     with mp_face_mesh.FaceMesh(
             static_image_mode=False,
@@ -248,13 +362,21 @@ def main():
             if "overlay" in writers:
                 overlay = frame.copy()
                 if face:
-                    draw_lips(overlay, face, color, args.thickness, args.lips)
+                    if args.style == "ghibli":
+                        draw_ghibli(overlay, face, color, thickness,
+                                    ghibli_state)
+                    else:
+                        draw_lips(overlay, face, color, thickness, args.lips)
                 writers["overlay"][1].write(overlay)
 
             if "black" in writers:
                 black = np.zeros_like(frame)
                 if face:
-                    draw_lips(black, face, color, args.thickness, args.lips)
+                    if args.style == "ghibli":
+                        draw_ghibli(black, face, color, thickness,
+                                    ghibli_state)
+                    else:
+                        draw_lips(black, face, color, thickness, args.lips)
                 writers["black"][1].write(black)
 
             written += 1
@@ -262,6 +384,7 @@ def main():
                 drawn += 1
             else:
                 no_face += 1
+                ghibli_state["smooth"] = None
             if written % 100 == 0:
                 print(f"  ... {written} frames written "
                       f"({drawn} with lips, {no_face} without a face)")
@@ -270,7 +393,7 @@ def main():
     for _, writer in writers.values():
         writer.release()
 
-    print(f"Done: {written} frames — lips drawn on {drawn}, "
+    print(f"Done: {written} frames — {args.style} mouth drawn on {drawn}, "
           f"no face found on {no_face}.")
     for mode, (path, _) in writers.items():
         print(f"  {mode}: {path}")
