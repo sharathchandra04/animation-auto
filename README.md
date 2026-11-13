@@ -8,6 +8,15 @@ Or, with `--style ghibli`, it draws **one single Ghibli-style mouth
 line** instead: a curved line when the mouth is closed, a single oval
 outline when it is open. No lip tracing, no skin patch — overlay only.
 
+Or, with `--style lipsync`, it does **real lip-sync animation from the
+audio**: `phonemes.py` transcribes the audio with Whisper, breaks words
+into phonemes, and maps each phoneme to one of the 12 mouth shapes in
+the Lip Sync chart library (`mouth_library_v2/manifest.json`). Shapes are
+traced point lists, resampled to 64 points, and **morphed** between
+keyframes over `--morph` seconds (default 0.1, eased) — not just swapped.
+The timeline JSON is built automatically from the video's audio if
+`<input>_phonemes.json` is not already there.
+
 ## Setup
 
 ```bash
@@ -28,6 +37,10 @@ mediapipe 0.10.21, numpy 1.26.4. Run with `.venv/bin/python`.
 # Ghibli style: one single black mouth line, overlay only
 .venv/bin/python lip_outline.py --input video.mp4 --output wuhan_noodles_lips_slow.mp4 --speed 0.5 --style ghibli
 
+# Lip-sync style: phonemes from the audio mapped to the 12 chart mouths,
+# morphed between keyframes (timeline built automatically if missing)
+.venv/bin/python lip_outline.py --input video.mp4 --output wuhan_noodles_lips_slow.mp4 --speed 0.5 --style lipsync
+
 # Every run is parameterised — change the flags to get a different output:
 .venv/bin/python lip_outline.py --input video.mp4 --output check_025.mp4 --speed 0.25
 .venv/bin/python lip_outline.py --input video.mp4 --output check_red.mp4 --speed 0.5 --color red --thickness 3 --lips outer
@@ -38,9 +51,15 @@ mediapipe 0.10.21, numpy 1.26.4. Run with `.venv/bin/python`.
 
 - `--input` — input video file (a positional filename works too)
 - `--output` — output file name, e.g. `lips_slow.mp4`
-- `--style` (alias `--mouth-style`) — `traditional` (default) or `ghibli`,
-  case-insensitive. Say `traditional` for the lip loops, `ghibli` for the
-  single Ghibli mouth line.
+- `--style` (alias `--mouth-style`) — `traditional` (default), `ghibli`,
+  or `lipsync`, case-insensitive. Say `traditional` for the lip loops,
+  `ghibli` for the single Ghibli mouth line, `lipsync` for the audio
+  phoneme animation.
+- `--phonemes` — phoneme timeline JSON for `--style lipsync` (default:
+  `<input>_phonemes.json` next to the input video; built automatically
+  from the audio if missing)
+- `--morph` — transition time in seconds between mouth shapes for
+  `--style lipsync` (default 0.1)
 - `--speed` (alias `--slow`) — 0.5 = half speed (default), 0.25 = quarter speed
 - `--color` — green (default for traditional), black (default for ghibli),
   red, blue, yellow, white, cyan, magenta
@@ -76,6 +95,17 @@ MediaPipe Face Mesh finds the face each frame.
 
 - **Traditional:** the script draws only the lip landmark loops (outer:
   20 points, inner: 20 points) with OpenCV.
+- **Lipsync:** `phonemes.py` transcribes the audio (Whisper, word
+  timestamps), breaks each word into phonemes (CMU dictionary for
+  English, pinyin mapping for Chinese), and maps each phoneme to one
+  of the 12 chart mouth shapes: silence CLOSED; M/B/P M_B_P; F/V F_V;
+  S/C/Z/SH/CH/D/T/K/G/N S_C_Z_SH_CH; AH/A AH_I_2; I AH_I_1; EE/UH/EN
+  EE_UH_EN; OH/O OH; OO/U/W/R OO_U_W_R; L/TH L_TH. Every shape is a
+  traced point list resampled to 64 points in the same order, so the
+  animation morphs point-by-point from one shape to the next over
+  `--morph` seconds (smoothstep eased) instead of swapping images.
+  Audio decides which shape and when; the face landmarks decide where
+  and how big (scaled to the real mouth corners each frame).
 - **Ghibli:** the script measures only the mouth width (corner to
   corner), height (top to bottom) and centre, smooths those numbers over
   frames, then draws one single line: a curved line when the mouth is

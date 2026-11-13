@@ -17,6 +17,22 @@ Styles (--style, case-insensitive):
                          from the lip landmarks (width, height, centre) each
                          frame and smoothed, so it opens and closes as the
                          person talks/eats. Default colour black, thickness 3.
+  lipsync                real lip-sync animation from the audio. phonemes.py
+                         transcribes the audio (Whisper), breaks words into
+                         phonemes, and maps each phoneme to one of the 12
+                         mouth shapes in the Lip Sync chart library
+                         (mouth_library_v2/manifest.json). The shape is NOT
+                         just swapped per phoneme: every shape is a traced
+                         point list, resampled to the same 64 points, and
+                         the points MORPH from the old shape to the new one
+                         over a short transition (~0.1s, eased), so the
+                         mouth travels between keyframes. Audio decides
+                         WHICH shape and WHEN; the face landmarks decide
+                         WHERE and HOW BIG (scaled to the real mouth
+                         corners each frame). Default colour black,
+                         thickness 3. Needs the phoneme timeline JSON
+                         (built automatically from the video's audio if
+                         it is not already there).
 
 Output naming: the style is always added to the output file name, just
 before the extension, e.g. --output wuhan_noodles_lips_slow.mp4 with
@@ -38,7 +54,12 @@ Parameters (all changeable on the command line):
   --input / positional input   input video file
   --output                     output file name, e.g. lips_slow.mp4
                                (the style is appended: _traditional/_ghibli)
-  --style / --mouth-style      traditional (default) or ghibli
+  --style / --mouth-style      traditional (default), ghibli, or lipsync
+  --phonemes                   phoneme timeline JSON for --style lipsync
+                               (default: <input>_phonemes.json next to the
+                               input video; built automatically if missing)
+  --morph                      transition time in seconds between mouth
+                               shapes for --style lipsync (default 0.1)
   --speed / --slow             playback speed, 0.5 = half speed (default),
                                0.25 = quarter speed. Must be > 0 and <= 1.
   --color                      green (default for traditional), black
@@ -64,6 +85,7 @@ Notes:
     summary, so timing never drifts.
 """
 import argparse
+import json
 import shutil
 import subprocess
 import sys
@@ -166,6 +188,139 @@ def draw_ghibli(frame, landmarks, color, thickness, state):
     return True
 
 
+LIPSYNC_N_POINTS = 64
+LIPSYNC_MORPH_DEFAULT = 0.1
+
+
+def _resample_closed(pts, n):
+    """Resample a closed loop of points to exactly `n` points.
+
+    Points are ordered around the loop, starting at the leftmost
+    point, all with the same orientation (signed area < 0 in image
+    coordinates), so two shapes resampled this way can be morphed
+    point-by-point without twisting.
+    """
+    pts = np.asarray(pts, dtype=float)
+    if len(pts) < 3:
+        return np.tile(pts[0], (n, 1))
+    # Enforce one orientation: signed area < 0.
+    area = 0.5 * np.sum(pts[:, 0] * np.roll(pts[:, 1], -1)
+                        - np.roll(pts[:, 0], -1) * pts[:, 1])
+    if area > 0:
+        pts = pts[::-1]
+    # Start at the leftmost point.
+    start = int(np.argmin(pts[:, 0]))
+    pts = np.vstack([pts[start:], pts[:start]])
+    closed = np.vstack([pts, pts[:1]])
+    d = np.sqrt(((np.diff(closed, axis=0)) ** 2).sum(axis=1))
+    s = np.concatenate([[0.0], np.cumsum(d)])
+    t = np.linspace(0.0, s[-1], n, endpoint=False)
+    return np.column_stack([np.interp(t, s, closed[:, 0]),
+                            np.interp(t, s, closed[:, 1])])
+
+
+def load_mouth_library(manifest_path):
+    """Load the traced mouth shapes.
+
+    Returns {shape_name: (points, aspect)} where points is a
+    (64, 2) array in 'mouth-width units': x in [0, 1] across the
+    mouth, y in [0, aspect] down the mouth, so shapes with different
+    proportions morph correctly. aspect = chart height / width.
+    Line shapes (closed, m/b/p) are stored as a flattened loop:
+    along the centreline and back, so they morph like any loop.
+    """
+    import json
+    data = json.loads(Path(manifest_path).read_text())
+    lib = {}
+    for entry in data:
+        pts = np.array(entry["points_01"], dtype=float)
+        w, h = entry["chart_box"][2], entry["chart_box"][3]
+        aspect = h / w if w else 0.1
+        if entry["drawn_as"] == "single_line":
+            loop = np.vstack([pts, pts[::-1]])
+        else:
+            loop = pts
+        resampled = _resample_closed(loop, LIPSYNC_N_POINTS)
+        # Scale y into mouth-width units (x stays 0..1).
+        resampled = resampled * np.array([1.0, aspect])
+        lib[entry["label"]] = (resampled, aspect)
+    return lib
+
+
+def _smoothstep(u):
+    u = min(1.0, max(0.0, u))
+    return u * u * (3.0 - 2.0 * u)
+
+
+def shape_at_time(library, segments, t, morph_s):
+    """Morphed mouth shape (points, aspect, shape_name) at time `t`.
+
+    `segments` is the phoneme timeline: [{shape, start, end}].
+    Inside a segment (after its first `morph_s` seconds) the shape
+    is held exactly. During the first `morph_s` seconds after a
+    segment starts, the points morph from the previous shape to the
+    new one with smoothstep easing — that is the in-between
+    keyframe interpolation, not a hard PNG swap.
+    """
+    current = None
+    previous = None
+    for i, seg in enumerate(segments):
+        if seg["start"] <= t < seg["end"]:
+            current = seg
+            previous = segments[i - 1] if i > 0 else None
+            break
+        if t < seg["start"]:
+            current = seg
+            previous = segments[i - 1] if i > 0 else None
+            break
+        previous = seg
+    if current is None:
+        return (*library["CLOSED"], "CLOSED")
+    pts, aspect = library[current["shape"]]
+    if previous is None or previous["shape"] == current["shape"]:
+        return pts, aspect, current["shape"]
+    elapsed = t - current["start"]
+    if elapsed >= morph_s:
+        return pts, aspect, current["shape"]
+    ppts, paspect = library[previous["shape"]]
+    u = _smoothstep(elapsed / morph_s)
+    return (1.0 - u) * ppts + u * pts, \
+        (1.0 - u) * paspect + u * aspect, current["shape"]
+
+
+def draw_lipsync(frame, landmarks, color, thickness, state, shape_pts, aspect):
+    """Draw the morphed mouth shape on `frame`, in place.
+
+    `shape_pts` are in mouth-width units (x 0..1, y 0..aspect).
+    The shape is scaled to the real mouth width (landmarks 61-291),
+    centred on the real mouth centre, and smoothed like the ghibli
+    measurements so it does not jitter.
+    """
+    h, w = frame.shape[:2]
+    pts = [(lm.x * w, lm.y * h) for lm in landmarks.landmark]
+    left = pts[GHIBLI_LEFT]
+    right = pts[GHIBLI_RIGHT]
+    top = pts[GHIBLI_TOP]
+    bottom = pts[GHIBLI_BOTTOM]
+    width = max(1.0, abs(right[0] - left[0]))
+    cx = (left[0] + right[0]) / 2.0
+    cy = (top[1] + bottom[1]) / 2.0
+    if state.get("smooth") is None:
+        state["smooth"] = (cx, cy, width)
+    else:
+        pcx, pcy, pw = state["smooth"]
+        state["smooth"] = (0.6 * cx + 0.4 * pcx,
+                           0.6 * cy + 0.4 * pcy,
+                           0.6 * width + 0.4 * pw)
+    cx, cy, width = state["smooth"]
+    xs = cx - width / 2.0 + shape_pts[:, 0] * width
+    ys = cy - (aspect / 2.0) * width + shape_pts[:, 1] * width
+    poly = np.column_stack([xs, ys]).astype(np.int32)
+    cv2.polylines(frame, [poly], isClosed=True, color=color,
+                  thickness=thickness, lineType=cv2.LINE_AA)
+    return True
+
+
 def styled_output(path, style):
     """Return `path` with _<style> added before the extension.
 
@@ -174,7 +329,7 @@ def styled_output(path, style):
     _traditional or _ghibli, that suffix is replaced, not doubled.
     """
     stem = path.stem
-    for old in ("_traditional", "_ghibli"):
+    for old in ("_traditional", "_ghibli", "_lipsync"):
         if stem.endswith(old):
             stem = stem[: -len(old)]
             break
@@ -235,12 +390,21 @@ def main():
                     help="Output file name, e.g. lips_slow.mp4 "
                          "(the style is appended: _traditional/_ghibli)")
     ap.add_argument("--style", dest="style", type=str.lower, default="traditional",
-                    choices=["traditional", "ghibli"],
+                    choices=["traditional", "ghibli", "lipsync"],
                     help="traditional: trace the lip loops (default); "
-                         "ghibli: one single Ghibli-style mouth line")
+                         "ghibli: one single Ghibli-style mouth line; "
+                         "lipsync: audio phonemes mapped to the chart "
+                         "mouth shapes, morphed between keyframes")
     ap.add_argument("--mouth-style", dest="style", type=str.lower, default=None,
-                    choices=["traditional", "ghibli"],
+                    choices=["traditional", "ghibli", "lipsync"],
                     help="Alias for --style")
+    ap.add_argument("--phonemes", default=None,
+                    help="Phoneme timeline JSON for --style lipsync "
+                         "(default: <input>_phonemes.json; built "
+                         "automatically from the audio if missing)")
+    ap.add_argument("--morph", type=float, default=LIPSYNC_MORPH_DEFAULT,
+                    help="Transition time in seconds between mouth shapes "
+                         "for --style lipsync (default 0.1)")
     ap.add_argument("--speed", dest="speed", type=float, default=0.5,
                     help="Playback speed, 0.5 = half speed (default), "
                          "0.25 = quarter speed. Must be > 0 and <= 1.")
@@ -281,16 +445,46 @@ def main():
         print("Note: --lips is ignored with --style ghibli "
               "(one single mouth line, no lip loops).")
 
-    # Per-style defaults: traditional = green, 2px; ghibli = black, 3px.
-    color_name = args.color or ("black" if args.style == "ghibli" else "green")
+    # Per-style defaults: traditional = green, 2px;
+    # ghibli / lipsync = black, 3px.
+    color_name = args.color or \
+        ("black" if args.style in ("ghibli", "lipsync") else "green")
     thickness = args.thickness if args.thickness is not None \
-        else (3 if args.style == "ghibli" else 2)
+        else (3 if args.style in ("ghibli", "lipsync") else 2)
     print(f"Style: {args.style}  colour: {color_name}  thickness: {thickness}")
 
     src = Path(src_name)
     if not src.is_file():
         print(f"ERROR: input video not found: {src}", file=sys.stderr)
         return 2
+
+    library = None
+    segments = None
+    if args.style == "lipsync":
+        manifest = Path(__file__).with_name("mouth_library_v2") / "manifest.json"
+        if not manifest.is_file():
+            print(f"ERROR: mouth library not found: {manifest}", file=sys.stderr)
+            return 2
+        library = load_mouth_library(manifest)
+        print(f"Mouth library: {len(library)} shapes from {manifest}")
+        timeline_path = Path(args.phonemes) if args.phonemes else \
+            src.with_name(src.stem + "_phonemes.json")
+        if not timeline_path.is_file():
+            print(f"No phoneme timeline at {timeline_path} — "
+                  "building it from the audio now (Whisper)...")
+            import phonemes as phonemes_mod
+            timeline = phonemes_mod.timeline_for_video(src)
+            timeline_path.write_text(json.dumps(timeline, indent=2,
+                                                ensure_ascii=False))
+            print(f"Wrote {timeline_path}")
+        else:
+            import json as _json
+            timeline = _json.loads(timeline_path.read_text())
+        segments = timeline["segments"]
+        print(f"Phoneme timeline: {len(timeline['phonemes'])} phonemes, "
+              f"{len(segments)} shape segments, "
+              f"language {timeline.get('language')}")
+        print(f"Transcript: {timeline.get('transcript', '')[:200]}")
 
     cap = cv2.VideoCapture(str(src))
     if not cap.isOpened():
@@ -365,6 +559,12 @@ def main():
                     if args.style == "ghibli":
                         draw_ghibli(overlay, face, color, thickness,
                                     ghibli_state)
+                    elif args.style == "lipsync":
+                        t = (frame_no - 1) / fps_in
+                        pts, aspect, _ = shape_at_time(
+                            library, segments, t, args.morph)
+                        draw_lipsync(overlay, face, color, thickness,
+                                     ghibli_state, pts, aspect)
                     else:
                         draw_lips(overlay, face, color, thickness, args.lips)
                 writers["overlay"][1].write(overlay)
@@ -375,6 +575,12 @@ def main():
                     if args.style == "ghibli":
                         draw_ghibli(black, face, color, thickness,
                                     ghibli_state)
+                    elif args.style == "lipsync":
+                        t = (frame_no - 1) / fps_in
+                        pts, aspect, _ = shape_at_time(
+                            library, segments, t, args.morph)
+                        draw_lipsync(black, face, color, thickness,
+                                     ghibli_state, pts, aspect)
                     else:
                         draw_lips(black, face, color, thickness, args.lips)
                 writers["black"][1].write(black)
