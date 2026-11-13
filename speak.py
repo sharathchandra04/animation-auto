@@ -15,7 +15,9 @@ How it works:
      the Lip Sync chart library (mouth_library_v2/manifest.json).
   2. Every shape is a traced point list, resampled to 64 points, and
      the points MORPH from the old shape to the new one over --morph
-     seconds (default 0.1, eased) — in-between keyframes, not swaps.
+     seconds (default 0.05, eased) — in-between keyframes, not swaps.
+     No shape holds for less than 0.1s: shorter phonemes are merged
+     into their neighbours, so the mouth never flickers.
   3. There is no video input and no face to track, so the mouth is
      drawn in the centre of a white canvas at a fixed size
      (--mouth-width fraction of the canvas), and your original audio
@@ -24,7 +26,7 @@ How it works:
 Parameters:
   --input      audio file you recorded (wav, mp3, m4a, ...)
   --output     output video file, e.g. speaking_mouth.mp4
-  --fps        video frame rate (default 30)
+  --fps        video frame rate (default 60)
   --size       square canvas size in pixels (default 720)
   --mouth-width  mouth width as a fraction of the canvas (default 0.62)
   --thickness  line thickness in pixels (default 6)
@@ -61,7 +63,7 @@ def main():
     ap.add_argument("--input", required=True, help="Audio file you recorded")
     ap.add_argument("--output", default=None,
                     help="Output video, e.g. speaking_mouth.mp4")
-    ap.add_argument("--fps", type=float, default=30.0)
+    ap.add_argument("--fps", type=float, default=60.0)
     ap.add_argument("--size", type=int, default=720,
                     help="Square canvas size in pixels (default 720)")
     ap.add_argument("--mouth-width", type=float, default=0.62,

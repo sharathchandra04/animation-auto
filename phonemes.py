@@ -94,6 +94,40 @@ def word_to_phonemes(word):
         return []
     return [re.sub(r"\d", "", p) for p in phones[0].split()]
 
+MIN_HOLD = 0.1  # seconds: no mouth shape holds for less than this.
+# Shorter than this, the eye cannot register the shape at all — it just
+# flickers. Short segments are merged into the longer of their neighbours
+# (a tiny pause simply disappears into the surrounding speech).
+
+def merge_short_segments(segments, min_hold=MIN_HOLD):
+    """Merge every segment shorter than `min_hold` into its longer neighbour.
+
+    Repeats until no segment is short (or only one segment is left).
+    Merging only ever lengthens neighbours, so this always terminates.
+    """
+    segs = [dict(s) for s in segments]
+    while len(segs) > 1:
+        short = [i for i, s in enumerate(segs)
+                 if s["end"] - s["start"] < min_hold]
+        if not short:
+            break
+        i = short[0]
+        if i == 0:
+            j = 1  # first segment: merge into the next one
+        elif i == len(segs) - 1:
+            j = i - 1  # last segment: merge into the previous one
+        else:
+            # merge into whichever neighbour is longer
+            prev_len = segs[i - 1]["end"] - segs[i - 1]["start"]
+            next_len = segs[i + 1]["end"] - segs[i + 1]["start"]
+            j = i - 1 if prev_len >= next_len else i + 1
+        lo_i, hi_i = min(i, j), max(i, j)
+        segs[lo_i] = {"shape": segs[j]["shape"],
+                      "start": segs[lo_i]["start"],
+                      "end": segs[hi_i]["end"]}
+        del segs[hi_i]
+    return segs
+
 def build_timeline(words):
     """Words [{word, start, end}] -> phonemes + merged shape segments."""
     phonemes = []
@@ -126,6 +160,7 @@ def build_timeline(words):
             segments.append({"shape": ph["shape"],
                              "start": ph["start"], "end": ph["end"]})
         prev_end = ph["end"]
+    segments = merge_short_segments(segments)
     return phonemes, segments
 
 def load_wav_16k(wav_path):

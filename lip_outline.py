@@ -25,7 +25,7 @@ Styles (--style, case-insensitive):
                          just swapped per phoneme: every shape is a traced
                          point list, resampled to the same 64 points, and
                          the points MORPH from the old shape to the new one
-                         over a short transition (~0.1s, eased), so the
+                         over a short transition (~0.05s, eased), so the
                          mouth travels between keyframes. Audio decides
                          WHICH shape and WHEN; the face landmarks decide
                          WHERE and HOW BIG (scaled to the real mouth
@@ -59,7 +59,7 @@ Parameters (all changeable on the command line):
                                (default: <input>_phonemes.json next to the
                                input video; built automatically if missing)
   --morph                      transition time in seconds between mouth
-                               shapes for --style lipsync (default 0.1)
+                               shapes for --style lipsync (default 0.05)
   --speed / --slow             playback speed, 0.5 = half speed (default),
                                0.25 = quarter speed. Must be > 0 and <= 1.
   --color                      green (default for traditional), black
@@ -189,7 +189,7 @@ def draw_ghibli(frame, landmarks, color, thickness, state):
 
 
 LIPSYNC_N_POINTS = 64
-LIPSYNC_MORPH_DEFAULT = 0.1
+LIPSYNC_MORPH_DEFAULT = 0.05
 
 
 def _resample_closed(pts, n):
@@ -404,7 +404,7 @@ def main():
                          "automatically from the audio if missing)")
     ap.add_argument("--morph", type=float, default=LIPSYNC_MORPH_DEFAULT,
                     help="Transition time in seconds between mouth shapes "
-                         "for --style lipsync (default 0.1)")
+                         "for --style lipsync (default 0.05)")
     ap.add_argument("--speed", dest="speed", type=float, default=0.5,
                     help="Playback speed, 0.5 = half speed (default), "
                          "0.25 = quarter speed. Must be > 0 and <= 1.")

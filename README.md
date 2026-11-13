@@ -62,7 +62,11 @@ to the same 12 chart mouth shapes, and morphs between them over
 mouth is drawn in the centre of a white 720x720 canvas at a fixed size
 (`--size`, `--mouth-width` 0.62, `--thickness` 6), and your original
 audio is muxed on at normal speed. Any audio format works (wav, mp3,
-m4a). Tested on the Wuhan audio: 57.05 s, 1,712 frames at 30 fps.
+m4a). Video is 60 fps by default (`--fps`), so the morphing looks
+smooth. No shape holds for less than 0.1 s: shorter phonemes are merged
+into their neighbours (`MIN_HOLD` in `phonemes.py`), and the morph is
+0.05 s, so each mouth settles and holds instead of flickering. Tested
+on the Wuhan audio: 57.05 s, 3,423 frames at 60 fps.
 
 ## Parameters
 
