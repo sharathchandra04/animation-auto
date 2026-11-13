@@ -64,12 +64,14 @@ mouth is drawn in the centre of a white 720x720 canvas at a fixed size
 audio is muxed on at normal speed. Any audio format works (wav, mp3,
 m4a). Video is 12 fps by default (`--fps`) — the classic animation
 rate: a frame lasts 0.083 s, close to the median phoneme (0.073 s), so
-roughly one mouth shape lands on each frame, and no phoneme is skipped
-(`MIN_HOLD = 0` in `phonemes.py`). The morph is 0.05 s. (60 fps and a
-0.1 s minimum hold were both tried and reverted: 60 fps alone did not
-fix the flicker, and the hold cut 429 segments to 109, deleting whole
+roughly one mouth shape lands on each frame. Only the very shortest
+phonemes are skipped — shapes under 0.04 s merge into their neighbours
+(`MIN_HOLD = 0.04` in `phonemes.py`), 47 of 429 segments (11%), mostly
+fleeting consonants. The morph is 0.05 s. (60 fps and a 0.1 s minimum
+hold were both tried and reverted: 60 fps alone did not fix the
+flicker, and the 0.1 s hold cut 429 segments to 109, deleting whole
 sounds.) Tested on the Wuhan audio: 57.05 s, 685 frames at 12 fps,
-429 shape segments.
+382 shape segments.
 
 ## Parameters
 

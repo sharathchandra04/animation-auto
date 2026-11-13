@@ -94,12 +94,13 @@ def word_to_phonemes(word):
         return []
     return [re.sub(r"\d", "", p) for p in phones[0].split()]
 
-MIN_HOLD = 0.0  # seconds: no merging — do not skip any phoneme.
-# Every phoneme keeps its shape, however brief. (A 0.1s minimum hold
-# was tried and reverted: it cut 429 segments to 109 and whole sounds
-# went missing. Even a one-frame hold deleted 4.) At 12 fps a frame
-# lasts 0.083s, close to the median phoneme (0.073s), so roughly one
-# mouth shape lands on each frame — the classic animation rate.
+MIN_HOLD = 0.04  # seconds: skip only the very shortest phonemes.
+# Shapes shorter than 40ms (about half a frame at 12 fps) are merged
+# into the longer of their neighbours — mostly fleeting consonants
+# between vowels, which the eye cannot see anyway. On the Wuhan audio
+# this drops 47 of 429 segments (11%) and keeps the rest. (A 0.1s
+# hold was tried earlier and reverted: it cut 429 to 109 and whole
+# sounds went missing.)
 
 def merge_short_segments(segments, min_hold=MIN_HOLD):
     """Merge every segment shorter than `min_hold` into its longer neighbour.
