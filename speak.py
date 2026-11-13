@@ -26,7 +26,7 @@ How it works:
 Parameters:
   --input      audio file you recorded (wav, mp3, m4a, ...)
   --output     output video file, e.g. speaking_mouth.mp4
-  --fps        video frame rate (default 60)
+  --fps        video frame rate (default 12)
   --size       square canvas size in pixels (default 720)
   --mouth-width  mouth width as a fraction of the canvas (default 0.62)
   --thickness  line thickness in pixels (default 6)
@@ -63,7 +63,7 @@ def main():
     ap.add_argument("--input", required=True, help="Audio file you recorded")
     ap.add_argument("--output", default=None,
                     help="Output video, e.g. speaking_mouth.mp4")
-    ap.add_argument("--fps", type=float, default=60.0)
+    ap.add_argument("--fps", type=float, default=12.0)
     ap.add_argument("--size", type=int, default=720,
                     help="Square canvas size in pixels (default 720)")
     ap.add_argument("--mouth-width", type=float, default=0.62,
