@@ -94,10 +94,13 @@ def word_to_phonemes(word):
         return []
     return [re.sub(r"\d", "", p) for p in phones[0].split()]
 
-MIN_HOLD = 0.1  # seconds: no mouth shape holds for less than this.
-# Shorter than this, the eye cannot register the shape at all — it just
-# flickers. Short segments are merged into the longer of their neighbours
-# (a tiny pause simply disappears into the surrounding speech).
+MIN_HOLD = 1.0 / 60.0  # seconds: one frame at 60 fps.
+# Only merge a shape shorter than a single frame — something that
+# physically cannot appear on screen. Anything longer stays, even if
+# it is brief: merging more than this deletes real phonemes (the 0.1s
+# hold tried earlier cut 429 segments to 109 and whole sounds went
+# missing). A short shape still matters: it is the morph target while
+# it lasts, and the morph source for the next shape.
 
 def merge_short_segments(segments, min_hold=MIN_HOLD):
     """Merge every segment shorter than `min_hold` into its longer neighbour.
