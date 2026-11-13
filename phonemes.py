@@ -172,6 +172,21 @@ def timeline_for_video(video_path, model="base"):
     return {"transcript": text, "language": language, "words": words,
             "phonemes": phonemes, "segments": segments}
 
+def timeline_for_audio(audio_path, model="base"):
+    """Full pipeline for one audio file: convert to 16kHz mono WAV,
+    transcribe it, build the phoneme timeline. Returns the timeline dict."""
+    import subprocess, tempfile
+    audio_path = Path(audio_path)
+    with tempfile.TemporaryDirectory() as td:
+        wav = Path(td) / "audio.wav"
+        subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", str(audio_path),
+                        "-vn", "-ac", "1", "-ar", "16000", str(wav)],
+                       check=True)
+        text, language, words = transcribe(wav, model)
+    phonemes, segments = build_timeline(words)
+    return {"transcript": text, "language": language, "words": words,
+            "phonemes": phonemes, "segments": segments}
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--input", required=True, help="WAV file (16kHz mono)")

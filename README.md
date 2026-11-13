@@ -47,6 +47,23 @@ mediapipe 0.10.21, numpy 1.26.4. Run with `.venv/bin/python`.
 .venv/bin/python lip_outline.py --input video.mp4 --output lips_only_025.mp4 --speed 0.25 --mode black
 ```
 
+## Speak — audio in, speaking-mouth video out (`speak.py`)
+
+Record your own voice, get a video of a black-outline mouth speaking on
+a white background, in lip-sync with your audio:
+
+```bash
+.venv/bin/python speak.py --input myvoice.m4a --output speaking_mouth.mp4
+```
+
+It transcribes the audio with Whisper (see `phonemes.py`), maps phonemes
+to the same 12 chart mouth shapes, and morphs between them over
+`--morph` seconds (default 0.1). No video input, no face tracking — the
+mouth is drawn in the centre of a white 720x720 canvas at a fixed size
+(`--size`, `--mouth-width` 0.62, `--thickness` 6), and your original
+audio is muxed on at normal speed. Any audio format works (wav, mp3,
+m4a). Tested on the Wuhan audio: 57.05 s, 1,712 frames at 30 fps.
+
 ## Parameters
 
 - `--input` — input video file (a positional filename works too)
