@@ -506,3 +506,153 @@ an empty sequence is the identity, order changes the result
 (left->top 509x508 vs top->left 508x509), left 45 then top 45
 grows the canvas in both directions with the subject intact,
 --tilt parsing rejects bad steps. All passed.
+
+## Squash and stretch — emotion in a scale (`squash.py`)
+
+Enlarging from the center, enlarging horizontally, enlarging
+vertically, shrinking from the center, shrinking horizontally,
+shrinking vertically — all six are the same operation: scaling
+(see scale.py), with the anchor deciding where the shape grows
+from. Anchor at the center and the shape grows in place;
+anchored at the bottom it stays planted on the ground. This
+file turns a scale into a motion over time: keyframes of
+(time, fx, fy, lift), interpolated with smoothstep easing.
+
+Volume preservation is the rule that makes it look organic:
+squash down means widen out, roughly fx * fy = 1, and that
+holds at every keyframe of the squash/stretch presets (bounce,
+surprise, land, breathe). A jump is stretch plus move up —
+the bounce preset lifts the shape while it stretches, and
+squashes it the moment it lands.
+
+    python squash.py --preset bounce --out bounce.mp4
+    python squash.py --preset surprise --out surprise.mp4
+    python squash.py --preset land --image insect.png --out land.mp4
+    python squash.py --preset bounce --anchor center --out bounce_c.mp4
+
+Presets (say the feeling, not the numbers): bounce (the classic
+ball bounce, 2s), surprise, land, breathe, excited (grows big
+all over), scared (shrinks small all over). The default shape
+is a ball drawn in code; pass --image to squash any image
+instead. `--sheet` saves a contact sheet of the keyframe
+moments for judging by eye.
+
+Tests: test_squash.py — every preset starts and ends at rest,
+fx * fy = 1 at every squash/stretch keyframe, bounce crouches
+before the jump, stretches at the top and squashes on landing,
+bottom anchor keeps the shape planted on the ground, center
+anchor keeps the centre still, frame count and size, rendering
+from an image. All passed.
+
+Board (PySide6 GUI)
+-------------------
+The Auto Animate editor — a board you click and drag on, instead of
+a command line. The board is the app on top of the library: the
+scene JSON is the data, the board is the window that shows it and
+lets you change it.
+
+What it is
+----------
+A PySide6 (Qt) window: the board in the centre, an asset panel on
+the right, a timeline at the bottom, a toolbar on top. It loads a
+frame manifest file or a folder of keyframe files, draws the board
+(grid, bottom-left origin, y up), and lets you select and drag
+assets, edit their properties, draw vector diagrams with a brush,
+play the keyframes back, and export the result.
+
+V1 features
+-----------
+Board: load a frame manifest or a folder of keyframe files; grid
+every 50 units with a toggle button to show/hide it; images as
+separate items, vector shapes as single-line paths; click to
+select, drag to move, selection outline; zoom in/out (mouse wheel
+around the cursor, buttons, shortcuts), zoom to asset (the selected
+asset fills the view — for working on a very small asset at full
+size), zoom to fit, pan via scrollbars. Zoom only changes the view,
+never the board coordinates in the manifest.
+
+Assets: right-hand panel lists every asset in the current frame
+(label, z, x, y); property editor for x, y, scale, z and anchor
+(the six options — custom shows anchor_fx/fy); changes apply live
+and mark the scene dirty; add an image asset from a file dialog;
+remove the selected asset; Save writes the manifest file(s) back.
+
+Timeline: keyframe strip (click to jump), current-time slider, fps
+spinbox (default 12), play/pause on a timer (1000/fps ms), step one
+frame forward/back, Add keyframe (saves the current scene as a
+keyframe at the playhead), onion skin toggle (previous keyframe
+faded red, next faded green underneath, not selectable), source and
+target keyframe selectors with Generate in-betweens.
+
+Brush: toolbar toggle Select vs Brush. The brush draws freehand
+vector diagrams on the board; on release the stroke becomes a
+vector asset (auto label stroke_1, stroke_2..., single black line,
+3px). If the playhead is not exactly on a keyframe, drawing first
+creates a keyframe at the current time and the stroke goes into
+it. Source/target workflow: draw the source diagram on one
+keyframe and the target diagram on another, then Generate
+in-betweens morphs the strokes into each other.
+
+Interpolation: between two keyframes, per asset — raster assets
+matched by image path, vector assets matched by label (brush
+strokes by order among vector assets). x, y and scale interpolate
+with smoothstep easing; shapes morph point-by-point (both
+resampled to 64 points first, same as interpolate.py); z and
+anchor hold from the earlier keyframe. Generate in-betweens writes
+one frame file at each 1/fps step strictly between source and
+target, and never overwrites an existing keyframe.
+
+Export: Render frame saves the current scene to a PNG (white
+background); Export video renders every frame at the chosen fps
+and stitches them with ffmpeg to an MP4.
+
+The data model
+--------------
+One manifest file per keyframe (frame_0001.json, frame_0013.json,
+... — zero-padded, so they sort in time order); assets are separate
+files whose paths the manifest contains. The board edits one frame
+file at a time; the player/exporter consumes the whole sequence in
+order. 12 keyframes per second at 12fps.
+
+A raster asset is {"image": "path relative to the manifest", ...}
+or {"image_data": "<base64 PNG>", ...} — the base64 form is for the
+mock data, because the GitHub push is text-only and cannot carry
+binary PNGs. A vector asset is {"label", "shape": "CLOSED"} (a
+mouth-library shape) or {"label", "points_01": [...], "width",
+"height"} (an inline shape, e.g. a brush stroke).
+
+Files: board_data.py (data layer, no Qt — load/validate/save,
+anchor math, interpolation), board_view.py (scene, grid, zoom),
+board_brush.py (freehand brush), board_timeline.py (keyframe
+strip, transport, onion skin, in-betweens), board_app.py (the
+window and the export). Tests: test_board.py (22 tests, run with
+QT_QPA_PLATFORM=offscreen python test_board.py).
+
+Mock data: board_mock/ — frame_0001.json (t=0) and frame_0013.json
+(t=1.0): the outlined insect at (50, 50), the rotated insect at
+(550, 350), and the mouth shape CLOSED at (350, 100). At t=1.0 the
+first insect has moved to (300, 50), the rotated insect has scaled
+to 0.5, and the mouth has morphed to AH_I_2. Positions follow
+demo_scene.json. The two insect PNGs are embedded as base64
+image_data (110 KB total for the folder).
+
+How to run it on Windows
+------------------------
+1. Install Python 3.11 or newer from python.org (tick "Add python
+   to PATH" during install).
+2. Install PySide6: `pip install PySide6`
+3. Get the code: `git clone https://github.com/sharathchandra04/animation-auto`
+   (or download the repo as a zip and unpack it).
+4. Run it: `cd animation-auto` then `python board_app.py board_mock`
+   (or `python board_app.py` on its own — the mock data is the
+   default). A window opens with the board, the mock scene loaded.
+5. Try it: click an insect and drag it; use Brush to draw a line;
+   press play at 12fps; Render frame to save a PNG.
+
+To take a screenshot without a window (headless):
+`python board_app.py --screenshot board.png`
+
+Video export needs ffmpeg on PATH. Without it, Export video tells
+you so and offers to save the PNG frames instead — stitch them on
+a machine that has ffmpeg:
+`ffmpeg -framerate 12 -i frame_%04d.png -c:v libx264 -pix_fmt yuv420p board.mp4`

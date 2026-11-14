@@ -7,3 +7,5 @@ numpy==1.26.4
 faster-whisper
 pronouncing
 pypinyin
+# Needed only for the board (PySide6 GUI editor):
+PySide6
