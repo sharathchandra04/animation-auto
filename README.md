@@ -300,3 +300,34 @@ degrees swaps dimensions, four quarter turns return the original,
 direction verified with a marker dot (+90 moves top to left),
 expand vs keep-size, transparency preserved (subject 34,975 px ->
 34,998 px), background fill. All passed.
+
+## Tilt — tilt an image on an axis, like a door (`tilt.py`)
+
+The tilt feature for Auto Animate. Pick one edge as the hinge —
+left, right, top or bottom — and an angle, and the image swings
+forward around that edge in 3D, like pulling a door towards you.
+
+    python tilt.py insect.png --axis left --angle 30
+    python tilt.py insect.png --axis top --angle 45
+    python tilt.py insect.png --axis right --angle -20
+    python tilt.py insect.png --axis bottom --angle 30 --background white
+
+- This is real perspective, not a flat squash: the image plane is
+  rotated in 3D around the hinge edge and projected with a pinhole
+  camera. The hinge edge does not move at all; the opposite (free)
+  edge swings toward you, so it looks bigger, and the top and
+  bottom edges converge toward the hinge.
+- `--angle` is in degrees (-89 to 89). Positive pulls the free
+  edge toward you; negative pushes it away, so it looks smaller.
+- `--focal` is the camera distance (default twice the image size):
+  larger is flatter, smaller is more dramatic.
+- The canvas grows to fit; empty corners are transparent (PNG
+  with alpha) unless `--background` fills them.
+
+Tests: test_tilt.py — 0 degrees is the identity, the hinge keeps
+its full length and stays on its edge, the free edge is magnified
+(canvas taller than the original), a negative angle narrows the
+image, all four axes work (left/right mirror each other, as do
+top/bottom), transparency preserved, angles of 90+ rejected. All
+passed; 45-degree demo on the insect verified visually on all
+four axes.
