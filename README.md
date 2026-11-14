@@ -440,3 +440,44 @@ together on screen, translate and scale, pivot resolution
 Demo: demo_scene.json rotated 30 deg around the screen centre
 (500, 400) — before/after sheet with the pivot and spokes drawn
 in red.
+
+## Render (anchored) — place each image by a chosen anchor (`render_anchor.py`)
+
+A second version of the render. The first render hooks every
+image by its bottom-left corner; this one lets you choose the
+anchor point for each image, and the image's position (x, y) is
+where that anchor sits on the grid.
+
+    {
+      "width": 1000, "height": 800,
+      "assets": [
+        {"image": "insect.png", "x": 500, "y": 400, "z": 0,
+         "anchor": "center"},
+        {"image": "insect.png", "x": 200, "y": 200, "z": 1,
+         "anchor": "custom", "anchor_fx": 0.25, "anchor_fy": 0.75}
+      ]
+    }
+
+    python render_anchor.py scene.json --out screen.png
+
+Six anchors:
+- "bottom-left" — the bottom-left corner (same as the first
+  render). "bottom-right", "top-left", "top-right" — the other
+  corners.
+- "center" — the centre of the image.
+- "custom" — a point you define, as fractions of the image size
+  from the bottom-left corner: anchor_fx across (0 = left,
+  1 = right) and anchor_fy up (0 = bottom, 1 = top). (0.25, 0.75)
+  is a quarter across and three quarters up. In a future app
+  interface this is the point you click on the image; here you
+  give the numbers.
+- An asset with no "anchor" in the scene is "bottom-left", so a
+  scene made for the first render works here unchanged. The
+  screen grid, z-order, clipping and transparency are the same
+  as the first render.
+
+Tests: test_render_anchor.py — each anchor lands in its own
+place for the same grid point, custom corners equal the named
+anchors ((0,0) = bottom-left, (1,1) = top-right,
+(0.5,0.5) = center), default anchor matches render.py exactly,
+z order still works, bad anchors rejected. All passed.
