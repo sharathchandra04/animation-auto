@@ -331,3 +331,41 @@ image, all four axes work (left/right mirror each other, as do
 top/bottom), transparency preserved, angles of 90+ rejected. All
 passed; 45-degree demo on the insect verified visually on all
 four axes.
+
+## Render — display a list of assets on a screen (`render.py`)
+
+The asset renderer for Auto Animate. You have a list of assets
+(images), each with a position and a z-factor, and this displays
+them all on one big screen.
+
+A scene is a JSON file:
+
+    {
+      "width": 1000, "height": 800,
+      "assets": [
+        {"image": "insect.png", "x": 50, "y": 50, "z": 0},
+        {"image": "insect_rot45.png", "x": 350, "y": 150, "z": 2}
+      ]
+    }
+
+    python render.py scene.json --out screen.png
+    python render.py scene.json --width 1920 --height 1080 --background white
+
+- The screen is a grid with the origin at the BOTTOM-LEFT corner:
+  x to the right, y going UP (the positive-positive Cartesian
+  quadrant). The renderer flips it to image pixels for you.
+- Each asset's hook is its BOTTOM-LEFT corner: that corner sits
+  at (x, y), so the image covers [x, x+width] by [y, y+height].
+- z-factor is the draw order: lowest z first, highest z last, so
+  the highest z appears on top. Equal z keeps list order (later
+  in the list is on top).
+- Assets are clipped to the screen, and transparent PNGs blend
+  correctly where they overlap. From Python the scene is just a
+  list: `render_assets([Asset("a.png", x=50, y=50, z=0)], 1000, 800)`.
+
+Tests: test_render.py — origin at bottom-left, y grows up, hook
+is the bottom-left corner, highest z on top regardless of list
+order, equal z keeps list order, clipping (half off-screen and
+fully off-screen), transparent blending. All passed; demo scene
+(demo_scene.json, 3 insect assets on a 1000x800 screen) verified
+visually.

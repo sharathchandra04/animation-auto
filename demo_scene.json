@@ -1,0 +1,8 @@
+{
+  "width": 1000, "height": 800,
+  "assets": [
+    {"image": "test_insect_magenta_outlined.png", "x": 50, "y": 50, "z": 0},
+    {"image": "assets/cuts/test_insect_magenta_outlined_B_b7d9ab_20261113_194349.png", "x": 550, "y": 350, "z": 1},
+    {"image": "test_insect_magenta_outlined_rot45.png", "x": 350, "y": 100, "z": 2}
+  ]
+}
