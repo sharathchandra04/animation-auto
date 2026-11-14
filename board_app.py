@@ -5,6 +5,8 @@ QMainWindow wiring the pieces together:
 - centre: BoardView / BoardScene (board_view.py)
 - right dock: asset panel — list + property editor
 - bottom dock: TimelinePanel (board_timeline.py)
+- left dock: Projects panel (board_project_panel.py) — projects,
+  sub-projects and scenes; clicking a scene loads it
 - toolbar: Load / Save, grid toggle, zoom, Select/Brush, render, export
 - brush tool (board_brush.py) for freehand vector diagrams
 
@@ -26,8 +28,12 @@ Usage
     python board_app.py                # mock data
     python board_app.py scene.json     # one frame file
     python board_app.py keyframes/     # folder of frame_*.json
-
+    python board_app.py --projects projects/   # projects root;
+        # loads the first scene of the first project
     python board_app.py --screenshot board.png   # offscreen render
+
+A project is a folder (project.json + scenes/ + subprojects/); a
+scene is a folder (scene.json + frame_*.json). See board_project.py.
 
 On Windows: Python 3.11+, `pip install PySide6`, clone the repo,
 `python board_app.py board_mock`. Video export needs ffmpeg on
@@ -45,19 +51,22 @@ from pathlib import Path
 from PySide6 import QtCore, QtGui, QtWidgets
 
 import board_data as bd
+import board_project as bp
 from board_brush import BrushTool
+from board_project_panel import ProjectPanel
 from board_timeline import TimelinePanel
 from board_view import BoardScene, BoardView
 
 HERE = Path(__file__).resolve().parent
 MOCK_DIR = HERE / "board_mock"
+PROJECTS_DIR = HERE / "projects"
 LIBRARY_PATH = HERE / "mouth_library_v2" / "manifest.json"
 
 
 class BoardWindow(QtWidgets.QMainWindow):
     """The editor window."""
 
-    def __init__(self, start_path=None):
+    def __init__(self, start_path=None, projects_root=None):
         super().__init__()
         self.setWindowTitle("Auto Animate Board")
         self.resize(1200, 900)
@@ -79,6 +88,8 @@ class BoardWindow(QtWidgets.QMainWindow):
         self.mode = "select"    # "select" or "brush"
         self._filling_panel = False
         self._preview_item = None
+        self.project_panel = None
+        self.projects_root = None
 
         self.scene = BoardScene(self)
         self.scene.on_item_moved = self._on_item_moved
@@ -90,12 +101,36 @@ class BoardWindow(QtWidgets.QMainWindow):
         self._build_asset_panel()
         self._build_timeline()
         self._build_statusbar()
+        self._build_project_panel()
+
+        if projects_root is not None:
+            self.projects_root = Path(projects_root)
+        elif PROJECTS_DIR.is_dir():
+            self.projects_root = PROJECTS_DIR
+        self.project_panel.set_root(self.projects_root)
 
         self.brush = BrushTool(self.view, self._on_brush_stroke,
                                self._on_brush_preview)
         self.view.viewport().installEventFilter(self)
 
-        self.load_path(start_path or MOCK_DIR)
+        # Initial load: an explicit path wins; otherwise the first
+        # scene of the projects root (when one is in effect);
+        # otherwise the mock data, exactly as before.
+        if start_path is not None:
+            self.load_path(start_path)
+        elif self.projects_root is not None:
+            first = bp.first_scene(
+                bp.scan_projects(self.projects_root))
+            if first is not None:
+                try:
+                    self._load_project_scene(
+                        first["path"], first.get("project_fps"))
+                except ValueError:
+                    self.load_path(MOCK_DIR)
+            else:
+                self.load_path(MOCK_DIR)
+        else:
+            self.load_path(MOCK_DIR)
 
     # -- building ---------------------------------------------------
 
@@ -246,36 +281,107 @@ class BoardWindow(QtWidgets.QMainWindow):
         self.statusBar().addPermanentWidget(self.time_label)
         self.statusBar().addPermanentWidget(self.dirty_label)
 
+    def _build_project_panel(self):
+        dock = QtWidgets.QDockWidget("Projects", self)
+        dock.setAllowedAreas(QtCore.Qt.LeftDockWidgetArea)
+        self.project_panel = ProjectPanel(self)
+        self.project_panel.on_scene_selected = \
+            self._on_project_scene_selected
+        self.project_panel.on_project_selected = \
+            self._on_project_selected
+        dock.setWidget(self.project_panel)
+        self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, dock)
+
+    # -- projects ---------------------------------------------------
+
+    def _set_fps(self, fps):
+        """Adopt a project's fps (timeline spinbox + board state)."""
+        self.fps = int(fps)
+        self.timeline.fps_spin.setValue(int(fps))
+
+    def _load_project_scene(self, scene_path, fps=None):
+        """Load a scene from the projects tree (fps from its project)."""
+        if fps:
+            self._set_fps(int(fps))
+        self.load_scene_folder(scene_path)
+        if self.project_panel is not None:
+            self.project_panel.select_scene(scene_path)
+
+    def _on_project_scene_selected(self, scene_path, project):
+        try:
+            self._load_project_scene(scene_path,
+                                     (project or {}).get("fps"))
+        except ValueError as exc:
+            QtWidgets.QMessageBox.warning(self, "Could not load scene",
+                                          str(exc))
+
+    def _on_project_selected(self, node):
+        n_scenes = bp.count_scenes(node)
+        n_subs = sum(1 for c in node.get("children", [])
+                     if c["kind"] == "subproject")
+        self.statusBar().showMessage(
+            f"Project {node['name']} — {n_scenes} scene(s), "
+            f"{n_subs} sub-project(s)")
+
     # -- loading ----------------------------------------------------
+
+    def _set_keyframes(self, keyframes, folder, file_path):
+        """Adopt a keyframe list as the current sequence."""
+        self.keyframes = keyframes
+        self.folder = folder
+        self.file_path = file_path
+        self.current_t = keyframes[0]["t"]
+        self.dirty = False
+        self.timeline.set_keyframes(self.keyframes, self.current_t)
+        self.show_time(self.current_t)
+        self._update_dirty_label()
+
+    def load_scene_folder(self, scene_path):
+        """Load a scene folder (frame_*.json files; scene.json ignored).
+
+        A scene folder holds scene.json next to the frame files, and
+        the plain folder loader would reject scene.json (it has no
+        width/height/assets), so only frame_*.json files are read,
+        each through board_data.load_manifest.
+        """
+        scene_path = Path(scene_path)
+        files = bp.keyframe_files(scene_path)
+        if not files:
+            raise ValueError(f"no frame files in {scene_path}")
+        scenes = []
+        for path in files:
+            scene = bd.load_manifest(path, library=self.library)
+            if "t" not in scene:
+                scene["t"] = bp.time_from_frame_file(path, self.fps)
+            scenes.append(scene)
+        scenes.sort(key=lambda s: s["t"])
+        self._set_keyframes(scenes, scene_path, None)
+        self.statusBar().showMessage(
+            f"loaded {len(scenes)} keyframe(s) from {scene_path}")
 
     def load_path(self, path):
         """Load a manifest file, a keyframe folder, or the mock data."""
         path = Path(path)
         try:
             if path.is_dir():
-                self.keyframes = bd.load_keyframes(path, self.fps,
-                                                   self.library)
-                self.folder = path
-                self.file_path = None
+                if (path / bp.SCENE_FILENAME).is_file():
+                    self.load_scene_folder(path)
+                    return
+                self._set_keyframes(
+                    bd.load_keyframes(path, self.fps, self.library),
+                    path, None)
             elif path.is_file():
                 scene = bd.load_manifest(path, library=self.library)
                 scene.setdefault("t", 0.0)
-                self.keyframes = [scene]
-                self.folder = None
-                self.file_path = path
+                self._set_keyframes([scene], None, path)
             else:
                 raise ValueError(f"not found: {path}")
         except ValueError as exc:
             QtWidgets.QMessageBox.warning(self, "Could not load", str(exc))
-            self.keyframes = [{"width": 1000, "height": 800, "t": 0.0,
-                               "assets": []}]
-            self.folder = None
-            self.file_path = None
-        self.current_t = self.keyframes[0]["t"]
-        self.dirty = False
-        self.timeline.set_keyframes(self.keyframes, self.current_t)
-        self.show_time(self.current_t)
-        self._update_dirty_label()
+            self._set_keyframes([{"width": 1000, "height": 800, "t": 0.0,
+                                  "assets": []}], None, None)
+            self.statusBar().showMessage(f"could not load {path}: {exc}")
+            return
         self.statusBar().showMessage(f"loaded {len(self.keyframes)} "
                                      f"keyframe(s) from {path}")
 
@@ -718,12 +824,15 @@ def main(argv=None):
     ap.add_argument("path", nargs="?", default=None,
                     help="frame manifest file or keyframe folder "
                          "(default: board_mock)")
+    ap.add_argument("--projects", default=None, metavar="DIR",
+                    help="projects root folder (default: projects/ "
+                         "if it exists)")
     ap.add_argument("--screenshot", default=None, metavar="PNG",
                     help="render the board offscreen to a PNG and exit")
     args = ap.parse_args(argv)
 
     app = QtWidgets.QApplication(sys.argv[:1])
-    window = BoardWindow(args.path)
+    window = BoardWindow(args.path, projects_root=args.projects)
     window.resize(1200, 900)
     window.show()
     app.processEvents()

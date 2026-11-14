@@ -656,3 +656,45 @@ Video export needs ffmpeg on PATH. Without it, Export video tells
 you so and offers to save the PNG frames instead — stitch them on
 a machine that has ffmpeg:
 `ffmpeg -framerate 12 -i frame_%04d.png -c:v libx264 -pix_fmt yuv420p board.mp4`
+
+## Projects and scenes — many projects, each with scenes (`board_project.py`)
+
+A project is a folder. Inside it: scenes, and sub-projects that are
+projects themselves, to any depth.
+
+    projects/                      <- the projects root (pick it in the panel)
+      DemoProject/
+        project.json               {"name", "width", "height", "fps"}
+        scenes/
+          01_opening/
+            scene.json             {"name"}
+            frame_0001.json        <- keyframes, the scene JSON format
+            frame_0013.json
+        subprojects/
+          Part2/
+            project.json
+            scenes/
+              02_chase/
+                scene.json
+                frame_0001.json
+                frame_0013.json
+
+The panel on the left of the board shows the tree: projects ->
+sub-projects -> scenes, with the keyframe count and length of each
+scene. Click a scene and it loads on the board (its project's fps
+is adopted too). Buttons: Open… (choose a projects folder), New
+project, New sub-project (inside the selected project), New scene
+(inside the selected project — it starts with a copy of the mock
+keyframe, so the board shows something straight away), Refresh.
+
+A missing or broken project.json / scene.json never crashes the
+panel: the folder still shows, with a ⚠ marker and the problem in
+its tooltip, and defaults (name = folder name, 12fps, 1000x800)
+are used.
+
+A project is one self-contained folder — copy it and you copy the
+project, scenes, sub-projects and keyframes together. The demo tree
+lives in projects/DemoProject/; run the board with
+`python board_app.py --projects projects/` to open on it, or just
+`python board_app.py` — projects/ next to the app is picked up
+automatically when it exists.
