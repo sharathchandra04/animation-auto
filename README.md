@@ -369,3 +369,29 @@ order, equal z keeps list order, clipping (half off-screen and
 fully off-screen), transparent blending. All passed; demo scene
 (demo_scene.json, 3 insect assets on a 1000x800 screen) verified
 visually.
+
+## Scale — zoom an image in or out (`scale.py`)
+
+The scale feature for Auto Animate. Give an image and a zoom
+factor (or an exact size) and it returns the image scaled.
+
+    python scale.py insect.png --factor 2        # zoom in 2x
+    python scale.py insect.png --factor 0.5      # zoom out to half
+    python scale.py insect.png --width 800       # width 800, height follows
+    python scale.py insect.png --width 800 --height 600
+    python scale.py insect.png --fx 2 --fy 0.5  # stretch x, squash y
+
+- `--factor` is a uniform zoom: above 1 zooms in, below 1 zooms
+  out. `--fx` / `--fy` scale x and y separately.
+- `--width` and/or `--height` set an exact size; one alone keeps
+  the aspect ratio, both together set it exactly.
+- `--interpolation` is nearest, linear (default), cubic or
+  lanczos. Linear is smooth for drawings; nearest keeps hard
+  pixel edges and is exact for whole-number zooms.
+- Transparency is preserved: the alpha channel is scaled with
+  the colours, so a cut-out stays a cut-out.
+
+Tests: test_scale.py — factor doubles/halves, factor 1 is the
+identity, 2x then 0.5x with nearest returns the original exactly,
+exact sizes, non-uniform fx/fy, transparency preserved, bad
+inputs rejected. All passed.
