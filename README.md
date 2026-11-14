@@ -359,6 +359,10 @@ A scene is a JSON file:
 - z-factor is the draw order: lowest z first, highest z last, so
   the highest z appears on top. Equal z keeps list order (later
   in the list is on top).
+- Each asset can carry its own `"scale"` — a zoom factor like in
+  scale.py (2 doubles it in the scene, 0.5 halves it). The hook
+  stays the bottom-left corner, so a scaled asset covers
+  [x, x+scaled width] by [y, y+scaled height]. No `"scale"` means 1.0.
 - Assets are clipped to the screen, and transparent PNGs blend
   correctly where they overlap. From Python the scene is just a
   list: `render_assets([Asset("a.png", x=50, y=50, z=0)], 1000, 800)`.
@@ -366,7 +370,9 @@ A scene is a JSON file:
 Tests: test_render.py — origin at bottom-left, y grows up, hook
 is the bottom-left corner, highest z on top regardless of list
 order, equal z keeps list order, clipping (half off-screen and
-fully off-screen), transparent blending. All passed; demo scene
+fully off-screen), transparent blending, per-asset scale (0.5x
+covers half the height, 2x covers double, hook stays put, bad
+scale rejected). All passed; demo scene
 (demo_scene.json, 3 insect assets on a 1000x800 screen) verified
 visually.
 
@@ -395,3 +401,42 @@ Tests: test_scale.py — factor doubles/halves, factor 1 is the
 identity, 2x then 0.5x with nearest returns the original exactly,
 exact sizes, non-uniform fx/fy, transparency preserved, bad
 inputs rejected. All passed.
+
+## Group — a common move for several assets (`group.py`)
+
+The group feature for Auto Animate. You have several assets on a
+screen and you want to move them all together, as one piece,
+around a common pivot point.
+
+    python group.py scene.json --pivot 500,400 --rotate 30
+    python group.py scene.json --pivot center --rotate -45 --out scene2.json
+    python group.py scene.json --pivot group --rotate 90 --dx 50 --dy -20
+    python group.py scene.json --pivot 500,400 --scale 1.5
+
+- The pivot is a point you give ("500,400"), the centre of the
+  screen ("center"), or the middle of the group ("group" — the
+  average of the assets' centres).
+- `--rotate` turns the group around the pivot: each asset orbits
+  it (its angle changes, its distance stays the same) AND the
+  image itself spins by the same angle — the group turns as one
+  rigid piece. Positive angles are counter-clockwise, the same
+  as rotate.py. The line from the pivot to each asset's centre is
+  its spoke, and it stays on its spoke at the same distance.
+- `--dx` / `--dy` move the group (the pivot moves with it).
+- `--scale` scales every asset's distance from the pivot, and
+  the images too (use --no-scale-images to spread the assets out
+  without resizing them).
+- The output is a new scene JSON (default <scene>_group.json)
+  with the new positions, and the rotated/scaled images are saved
+  next to the originals (e.g. insect_rot30.png). Screen size and
+  z-factors are unchanged; assets that rotate off the screen are
+  clipped by the renderer.
+
+Tests: test_group.py — rotation matrix (0/30/90/-90/180), orbit
+keeps the distance from the pivot at every angle, spin moves a
+marker dot from the top to the left of the image, orbit+spin
+together on screen, translate and scale, pivot resolution
+(point/center/group), identity changes nothing. All passed.
+Demo: demo_scene.json rotated 30 deg around the screen centre
+(500, 400) — before/after sheet with the pivot and spokes drawn
+in red.
