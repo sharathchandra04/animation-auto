@@ -273,3 +273,30 @@ rejected, naming pattern checked, pipeline saves two paired assets,
 grid drawing verified. All passed; demo cut of the outlined insect
 verified visually (head + antennae in one piece, body + legs in
 the other, outline kept on both).
+
+## Rotate — rotate an image by a given angle (`rotate.py`)
+
+The rotate feature for Auto Animate. Give an image and an angle in
+degrees; it rotates the image by that angle.
+
+    python rotate.py insect.png --angle 45
+    python rotate.py insect.png --angle -30 --out insect_r-30.png
+    python rotate.py insect.png --angle 90 --keep-size
+    python rotate.py insect.png --angle 45 --background white
+
+- `--angle` is in degrees, any number. Positive is
+  counter-clockwise, negative is clockwise (the standard
+  convention, same as OpenCV and PIL).
+- By default the canvas grows so nothing is cropped (a 45-degree
+  rotation of a 400x400 image becomes 566x566). `--keep-size`
+  keeps the original canvas and crops the corners instead.
+- Empty corners are transparent (PNG with alpha) unless
+  `--background` fills them with a solid colour.
+- `--center x,y` rotates around a point other than the image
+  centre; `--interpolation` is nearest, linear (default) or cubic.
+
+Tests: test_rotate.py — 0 and 360 degrees are the identity, 90
+degrees swaps dimensions, four quarter turns return the original,
+direction verified with a marker dot (+90 moves top to left),
+expand vs keep-size, transparency preserved (subject 34,975 px ->
+34,998 px), background fill. All passed.
