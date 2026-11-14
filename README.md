@@ -211,3 +211,34 @@ Tests: test_remove_background.py (magenta/green/hex removal,
 tolerance behaviour, speck cleanup) — all passed on a synthetic
 insect-on-magenta image: subject 21.9% of the image, corners
 fully transparent, body fully opaque.
+
+## Add outline — cut-out asset + outline of your colour (`add_outline.py`)
+
+Step 2 of the cut-out feature for Auto Animate: the whole pipeline
+in one command. It removes the background, saves the cut-out as an
+asset/icon (transparent PNG), then draws an outline of a colour of
+your choice around it — outside the subject, so no part of the
+picture is ever covered.
+
+    python add_outline.py insect.png --key-color magenta \
+        --outline-color black --thickness 6
+    # -> insect_cut.png (the asset) + insect_outlined.png (outlined)
+
+    # From an already cut-out PNG (background removal is skipped):
+    python add_outline.py insect_cut.png --outline-color "#FF0000"
+    # Flatten onto a solid background instead of transparency:
+    python add_outline.py insect.png --background white
+
+- `--outline-color`: a name (black, red, white, ...) or a hex code
+  (#FF0000). Default: black.
+- `--thickness` (default 6): outline thickness in pixels. About
+  1.5% of the image width is a good starting point.
+- `--key-color`, `--tolerance`, `--feather` are passed to background
+  removal (see above).
+
+Tests: test_add_outline.py — ring is black and outside the subject,
+thickness reaches exactly 3/6/10 px as asked, outline colour
+respected (#FF0000 gives a red ring), pipeline works from a magenta
+image and from an already-cut PNG, flatten works. All passed on
+the synthetic insect: ring pixel (0,0,0,255), body untouched,
+corner transparent.
