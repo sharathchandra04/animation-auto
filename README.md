@@ -183,3 +183,31 @@ command line it draws a contact sheet of the in-betweens:
 
 Tests: test_interpolate.py (endpoints exact, linear midpoint,
 smoothstep easing, step counts, all 144 shape pairs).
+
+## Remove background — solid colour out, transparent PNG (`remove_background.py`)
+
+Step 1 of the cut-out feature for Auto Animate. You generate a
+picture with AI on a solid background (an insect on magenta); this
+cuts that colour out and saves a PNG with a transparent background.
+
+    python remove_background.py insect.png --color magenta --out insect_cut.png
+    python remove_background.py photo.png --color "#00FF00" --tolerance 60
+
+- `--color`: the background colour to remove — a name (magenta,
+  green, blue, white, black, red, yellow, cyan) or a hex code
+  (#FF00FF). Default: magenta.
+- `--tolerance` (default 40): how close a pixel must be to the key
+  colour to count as background. AI "solid" backgrounds are never
+  perfectly flat, so raise it if background is left behind, lower
+  it if the subject is being eaten.
+- `--feather` (default 2): softens the edge so it does not look
+  jagged. Isolated specks outside the subject are dropped
+  (largest connected piece kept).
+- Output is always a PNG with an alpha channel — JPEG cannot hold
+  transparency. Pick a background colour the subject does not
+  contain: a magenta insect on magenta cannot be separated.
+
+Tests: test_remove_background.py (magenta/green/hex removal,
+tolerance behaviour, speck cleanup) — all passed on a synthetic
+insect-on-magenta image: subject 21.9% of the image, corners
+fully transparent, body fully opaque.
