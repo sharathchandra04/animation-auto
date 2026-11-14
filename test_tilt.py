@@ -3,7 +3,7 @@
 import numpy as np
 
 from test_remove_background import make_insect
-from tilt import tilt_corners, tilt_image
+from tilt import parse_step, tilt_corners, tilt_image, tilt_sequence
 
 
 def test_zero_is_identity():
@@ -86,6 +86,58 @@ def test_angle_limits():
     print("angle limits: ok")
 
 
+def test_sequence_single_step_matches_single_tilt():
+    img = make_insect()
+    one = tilt_sequence(img, [("left", 45)])
+    single = tilt_image(img, "left", 45)
+    assert np.array_equal(one, single), \
+        "a one-step sequence must equal the single tilt"
+    none = tilt_sequence(img, [])
+    assert np.array_equal(none[:, :, :3], img), \
+        "an empty sequence must be the identity"
+    print("sequence single step matches single tilt: ok")
+
+
+def test_sequence_order_matters():
+    # 3D rotations do not commute: left then top must differ from
+    # top then left.
+    img = make_insect()
+    a = tilt_sequence(img, [("left", 45), ("top", 45)])
+    b = tilt_sequence(img, [("top", 45), ("left", 45)])
+    assert not np.array_equal(a, b), "order must change the result"
+    assert a.shape[2] == 4 and b.shape[2] == 4
+    print(f"sequence order matters: ok "
+          f"(left->top {a.shape[1]}x{a.shape[0]}, "
+          f"top->left {b.shape[1]}x{b.shape[0]})")
+
+
+def test_sequence_left_then_top():
+    # The requested chain: left 45, then top 45 on the result.
+    # The canvas must grow in both directions versus the original,
+    # and the subject must survive both warps.
+    img = make_insect()
+    out = tilt_sequence(img, [("left", 45), ("top", 45)], focal=800)
+    assert out.shape[1] > img.shape[1] and out.shape[0] > img.shape[0], \
+        f"chained canvas {out.shape[1]}x{out.shape[0]} must exceed 400x400"
+    subject = int((out[:, :, 3] > 127).sum())
+    assert subject > 10000, f"subject must survive, got {subject} px"
+    print(f"sequence left then top: ok "
+          f"({out.shape[1]}x{out.shape[0]}, subject {subject} px)")
+
+
+def test_parse_step():
+    assert parse_step("left:45") == ("left", 45.0)
+    assert parse_step("top:-30") == ("top", -30.0)
+    for bad in ("left", "side:45", "left:abc", "left:45:60"):
+        try:
+            parse_step(bad)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"{bad!r} must be rejected")
+    print("parse step: ok")
+
+
 if __name__ == "__main__":
     test_zero_is_identity()
     test_hinge_stays_put()
@@ -93,4 +145,8 @@ if __name__ == "__main__":
     test_all_four_axes()
     test_transparency_preserved()
     test_angle_limits()
+    test_sequence_single_step_matches_single_tilt()
+    test_sequence_order_matters()
+    test_sequence_left_then_top()
+    test_parse_step()
     print("ALL TILT TESTS PASSED")

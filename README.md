@@ -481,3 +481,28 @@ place for the same grid point, custom corners equal the named
 anchors ((0,0) = bottom-left, (1,1) = top-right,
 (0.5,0.5) = center), default anchor matches render.py exactly,
 z order still works, bad anchors rejected. All passed.
+
+## Tilt — chain several tilts for a 3D turn (`tilt.py`)
+
+A single tilt is `--axis left --angle 30`. To turn the image in
+3D step by step, chain tilts with `--tilt` (repeatable, applied
+in order):
+
+    python tilt.py insect.png --tilt left:45 --tilt top:45
+    python tilt.py insect.png --tilt left:45 --tilt top:45 --focal 800
+
+Each step tilts the result of the previous one, so left 45 then
+top 45 is a door opening sideways and then tipping back. Order
+matters — left then top is not the same as top then left (3D
+rotations do not commute). A `--focal` given with a chain is
+shared by every step (one camera for the whole turn); without
+one, each step uses twice its own image size. Chaining two 2D
+tilts is an approximation of a true 3D turn: the first tilt
+flattens the depth, so the second tilt works on the projection,
+not the original 3D shape — but it reads as a 3D turn.
+
+Tests: test_tilt.py — a one-step sequence equals the single tilt,
+an empty sequence is the identity, order changes the result
+(left->top 509x508 vs top->left 508x509), left 45 then top 45
+grows the canvas in both directions with the subject intact,
+--tilt parsing rejects bad steps. All passed.

@@ -29,8 +29,14 @@ Usage
     python tilt.py insect.png --axis right --angle -20
     python tilt.py insect.png --axis bottom --angle 30 --background white
 
-    from tilt import tilt_image
+    # Chain tilts one after another on the same image, for a 3D
+    # turn: left 45 degrees, then top 45 degrees on the result.
+    python tilt.py insect.png --tilt left:45 --tilt top:45
+    python tilt.py insect.png --tilt left:45 --tilt top:45 --focal 800
+
+    from tilt import tilt_image, tilt_sequence
     tilted = tilt_image(bgra, axis="left", angle=30)  # BGRA
+    turned = tilt_sequence(bgra, [("left", 45), ("top", 45)])
 
 Notes
 -----
@@ -124,6 +130,42 @@ def tilt_image(img, axis, angle, focal=None, background=None):
     return out
 
 
+def parse_step(spec):
+    """Parse one chained tilt step, 'axis:angle' (e.g. 'left:45')."""
+    try:
+        axis, angle = spec.split(":")
+        angle = float(angle)
+    except ValueError:
+        raise ValueError(
+            f"--tilt takes 'axis:angle', e.g. 'left:45', got {spec!r}"
+        ) from None
+    if axis not in AXES:
+        raise ValueError(f"unknown axis {axis!r}; use {AXES}")
+    return axis, angle
+
+
+def tilt_sequence(img, steps, focal=None, background=None):
+    """Tilt `img` through a series of (axis, angle) steps, in order.
+
+    Each step tilts the result of the previous one, so the image
+    turns in 3D step by step — left 45 then top 45 is a door
+    opening sideways and then tipping back. Order matters: left
+    then top is not the same as top then left, because 3D
+    rotations do not commute. If `focal` is given it is shared by
+    every step (one camera for the whole turn); otherwise each
+    step uses twice its own image size. `background` fills the
+    empty corners of the final image only.
+    """
+    out = img
+    for axis, angle in steps:
+        out = tilt_image(out, axis, angle, focal=focal)
+    if background is not None:
+        from add_outline import flatten
+
+        return flatten(out, background)
+    return out
+
+
 if __name__ == "__main__":
     import argparse
 
@@ -133,37 +175,59 @@ if __name__ == "__main__":
         description="Tilt an image on an axis, like pulling a door "
                     "towards you.")
     ap.add_argument("input", help="input image (any format)")
-    ap.add_argument("--axis", required=True, choices=list(AXES),
-                    help="the hinge edge: left, right, top or bottom")
-    ap.add_argument("--angle", type=float, required=True,
+    ap.add_argument("--axis", default=None, choices=list(AXES),
+                    help="the hinge edge: left, right, top or bottom "
+                         "(single tilt)")
+    ap.add_argument("--angle", type=float, default=None,
                     help="tilt angle in degrees (-89 to 89). Positive "
                          "pulls the free edge toward you; negative "
-                         "pushes it away.")
+                         "pushes it away. (single tilt)")
+    ap.add_argument("--tilt", action="append", default=None,
+                    help="one step of a chained tilt, 'axis:angle' "
+                         "(e.g. --tilt left:45 --tilt top:45). Repeat "
+                         "for more steps; applied in order.")
     ap.add_argument("--focal", type=float, default=None,
                     help="camera distance in pixels (default: twice the "
                          "image size). Larger is flatter, smaller is "
-                         "more dramatic.")
+                         "more dramatic. For a chained tilt it is "
+                         "shared by every step.")
     ap.add_argument("--background", default=None,
                     help="fill the empty corners with this solid colour "
                          "(name or hex) instead of transparency")
     ap.add_argument("--out", default=None,
                     help="output PNG; default "
-                         "<input>_tilt-<axis><angle>.png")
+                         "<input>_tilt-<axis><angle>.png (or "
+                         "<input>_tilt-<axis><angle>-<axis><angle>.png "
+                         "for a chain)")
     args = ap.parse_args()
+
+    if args.tilt:
+        steps = [parse_step(s) for s in args.tilt]
+    elif args.axis is not None and args.angle is not None:
+        steps = [(args.axis, args.angle)]
+    else:
+        ap.error("give --axis and --angle for one tilt, or --tilt "
+                 "'axis:angle' (repeatable) for a chained tilt")
 
     img = cv2.imread(args.input, cv2.IMREAD_UNCHANGED)
     if img is None:
         raise SystemExit(f"could not read {args.input}")
-    out_img = tilt_image(img, args.axis, args.angle, focal=args.focal,
-                         background=args.background)
+    if len(steps) == 1:
+        out_img = tilt_image(img, *steps[0], focal=args.focal,
+                             background=args.background)
+    else:
+        out_img = tilt_sequence(img, steps, focal=args.focal,
+                                background=args.background)
     out = args.out
     if out is None:
         stem = args.input.rsplit(".", 1)[0]
-        angle_txt = f"{args.angle:g}".replace("-", "m").replace(".", "p")
-        out = f"{stem}_tilt-{args.axis}{angle_txt}.png"
+        tag = "-".join(
+            f"{ax}{ang:g}".replace("-", "m").replace(".", "p")
+            for ax, ang in steps)
+        out = f"{stem}_tilt-{tag}.png"
     if not out.lower().endswith(".png"):
         out += ".png"
     cv2.imwrite(out, out_img)
-    print(f"tilted {args.axis} {args.angle:g} degrees "
-          f"({img.shape[1]}x{img.shape[0]} -> "
+    print(f"tilted {' then '.join(f'{ax} {ang:g}' for ax, ang in steps)} "
+          f"degrees ({img.shape[1]}x{img.shape[0]} -> "
           f"{out_img.shape[1]}x{out_img.shape[0]}) -> {out}")
