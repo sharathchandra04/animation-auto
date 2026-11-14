@@ -242,3 +242,34 @@ respected (#FF0000 gives a red ring), pipeline works from a magenta
 image and from an already-cut PNG, flatten works. All passed on
 the synthetic insect: ring pixel (0,0,0,255), body untouched,
 corner transparent.
+
+## Scissor — cut an image into two pieces along a line (`scissor.py`)
+
+The cut feature for Auto Animate. Place an image on a grid, give
+two points on the grid (or a line equation), and the image is cut
+into two pieces along the line through them — each piece saved as
+its own transparent asset.
+
+    python scissor.py insect_outlined.png --p1 100,50 --p2 300,350
+    python scissor.py insect_outlined.png --equation "y = 0.5x + 10"
+    python scissor.py insect_outlined.png --equation "x = 200"
+    # Draw the grid preview first, to read coordinates off it:
+    python scissor.py insect_outlined.png --show-grid --grid-step 50
+
+- The line is the infinite line through your two points, so the cut
+  runs across the whole image. The length of the segment between
+  the points is reported (e.g. 360.6 px). Coordinates: x right,
+  y down, origin top-left.
+- The two pieces always rebuild the original exactly: every pixel
+  goes to exactly one side, nothing is lost or doubled.
+- Assets go to `--out-dir` (default `assets/cuts/`) and are named
+  with a random ID and a timestamp, shared by both pieces of one
+  cut so they stay paired:
+  `insect_outlined_A_b7d9ab_20261113_194349.png`.
+
+Tests: test_scissor.py — vertical/horizontal/diagonal cuts rebuild
+the original exactly, equation matches points, identical points
+rejected, naming pattern checked, pipeline saves two paired assets,
+grid drawing verified. All passed; demo cut of the outlined insect
+verified visually (head + antennae in one piece, body + legs in
+the other, outline kept on both).
