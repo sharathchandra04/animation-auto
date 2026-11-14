@@ -160,3 +160,26 @@ summary counts them.
   has not been generated yet — say the word and it will be run with
   `--style ghibli`.
 
+
+## Interpolate — in-between shapes between any two mouths (`interpolate.py`)
+
+A standalone feature: given two mouth shapes, generate the
+in-betweens. Both shapes are resampled to the same 64 points in the
+same order, then blended point-by-point with smoothstep easing
+(the same math as the lipsync morphing) or linear easing.
+
+    from interpolate import interpolate_shapes
+    frames = interpolate_shapes(lib, "CLOSED", "AH_I_2", steps=4)
+    # -> 5 shapes: CLOSED, 0.25, 0.5, 0.75, AH_I_2
+
+    # One in-between at any position t in [0, 1]:
+    from interpolate import interpolate_at
+    pts, aspect = interpolate_at(lib, "CLOSED", "AH_I_2", 0.5)
+
+Shapes can be library names or raw (N, 2) point arrays. From the
+command line it draws a contact sheet of the in-betweens:
+
+    python interpolate.py CLOSED AH_I_2 --steps 6 --out demo.png
+
+Tests: test_interpolate.py (endpoints exact, linear midpoint,
+smoothstep easing, step counts, all 144 shape pairs).
